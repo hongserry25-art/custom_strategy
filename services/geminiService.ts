@@ -3,35 +3,51 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, GrowthStage } from "../types";
 
 export const analyzeStock = async (ticker: string, customMethodology?: string): Promise<AnalysisResult> => {
+  // 항상 최신 API Key를 사용하기 위해 호출 시점에 process.env.API_KEY 참조
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key is missing. 상단의 'API 키 설정' 버튼을 이용해주세요.");
+    throw new Error("API_KEY_MISSING");
   }
 
   const ai = new GoogleGenAI({ apiKey });
   
   const baseInstruction = `
-    당신은 월가 수준의 퀀트 투자 전문가입니다. 
-    티커 "${ticker}"에 대해 다음 방법론을 적용하여 JSON 보고서를 작성하세요.
-    반드시 한국어로 답변하고, 숫자는 2026년 추정치를 반영하십시오.
+    당신은 세계 최고의 주식 분석가입니다. 
+    사용자가 입력한 티커 "${ticker}"에 대해 심층적인 정량 분석을 수행하십시오.
+    모든 데이터는 2026년 실적 추정치(Forward Estimates)를 기반으로 산출해야 합니다.
   `;
 
-  const methodologyText = customMethodology 
-    ? `[업로드된 커스텀 방법론 지침]\n${customMethodology}`
-    : `[기본 올랜도 킴 방법론]\n- TAM/SAM/SOM 규모 산출\n- S-Curve 성장 단계 판단\n- LTV/CAC 유닛 이코노믹스 검증`;
+  // 파일 내용이 있으면 그것을 최우선 지침으로 설정
+  const methodologyInstruction = customMethodology 
+    ? `
+      [필독: 엄격 준수 분석 방법론]
+      사용자가 업로드한 파일에서 추출된 다음 분석법을 **반드시 100% 적용**하여 분석하십시오:
+      ---
+      ${customMethodology}
+      ---
+      위 방법론에서 정의한 기준과 정량적 공식을 사용하여 데이터를 산출하십시오.
+    `
+    : `
+      [기본 방법론: 올랜도 킴 모델]
+      - TAM/SAM/SOM 규모 산출 (2026년 기준)
+      - 성장 단계 판단 및 S-Curve 침투율 분석
+      - LTV/CAC 유닛 이코노믹스 건전성 검증
+    `;
 
   const systemInstruction = `
     ${baseInstruction}
-    ${methodologyText}
+    ${methodologyInstruction}
     
-    출력은 반드시 유효한 JSON 형식이어야 하며 마크다운 코드 블록(예: \`\`\`json)을 포함하지 마십시오.
-    구글 검색(googleSearch)을 활용해 최신 2024-2025 실적과 2026 가이던스를 참고하세요.
+    [출력 규칙]
+    - 반드시 한국어로 답변하십시오.
+    - 출력 형식은 반드시 순수 JSON이어야 합니다. 마크다운 코드 블록(\`\`\`json)을 사용하지 마십시오.
+    - googleSearch 도구를 사용하여 최신 뉴스, 공시 자료, 애널리스트 리포트 가이던스를 검색하십시오.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview", 
-      contents: `미국 주식 ${ticker}의 정량 분석 결과(2026 추정치 포함)를 JSON으로 생성해줘.`,
+      model: "gemini-3-pro-preview", // 복잡한 정량 분석과 검색을 위해 Pro 모델 사용
+      contents: `미국 주식 ${ticker}에 대해 제공된 방법론을 적용한 정량 분석 결과를 JSON으로 작성해줘. 2026년 전망치를 포함해야 해.`,
       config: {
         systemInstruction: systemInstruction,
         tools: [{ googleSearch: {} }],
@@ -134,7 +150,7 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
       if (jsonMatch) {
         data = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error("분석 데이터를 읽을 수 없습니다. (JSON 파싱 실패)");
+        throw new Error("JSON_PARSE_FAILED");
       }
     }
     
