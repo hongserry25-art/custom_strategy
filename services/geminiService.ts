@@ -5,44 +5,36 @@ import { AnalysisResult, GrowthStage } from "../types";
 export const analyzeStock = async (ticker: string, customMethodology?: string): Promise<AnalysisResult> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key must be set. 상단의 API 키 설정 버튼을 눌러주세요.");
+    throw new Error("API Key is missing. 상단의 'API 키 설정' 버튼을 이용해주세요.");
   }
 
-  // 매 요청마다 새 인스턴스 생성하여 최신 키 반영
   const ai = new GoogleGenAI({ apiKey });
   
-  const defaultMethodology = `
-    - 시장 규모 (TAM, SAM, SOM): 2026년 기준의 달러($B) 단위 예상치를 산출하십시오.
-    - 성장 단계: S-Curve 및 시장 침투율을 기반으로 판단하십시오.
-    - 유닛 이코노믹스: LTV, CAC, 공헌 이익률 등을 2026년 가이던스 추정치로 계산하십시오.
-    - 매수 전략: 현재 주가 상황을 반영하여 단기/중기/장기 전략을 수립하십시오.
+  const baseInstruction = `
+    당신은 월가 수준의 퀀트 투자 전문가입니다. 
+    티커 "${ticker}"에 대해 다음 방법론을 적용하여 JSON 보고서를 작성하세요.
+    반드시 한국어로 답변하고, 숫자는 2026년 추정치를 반영하십시오.
   `;
 
-  const methodologyToUse = customMethodology ? `사용자가 제공한 다음 분석 방법론을 엄격히 적용하십시오:\n${customMethodology}` : `기본 분석 방법론(올랜도 킴 모델)을 적용하십시오:\n${defaultMethodology}`;
+  const methodologyText = customMethodology 
+    ? `[업로드된 커스텀 방법론 지침]\n${customMethodology}`
+    : `[기본 올랜도 킴 방법론]\n- TAM/SAM/SOM 규모 산출\n- S-Curve 성장 단계 판단\n- LTV/CAC 유닛 이코노믹스 검증`;
 
   const systemInstruction = `
-    당신은 세계 최고의 퀀트 투자 분석가입니다.
-    입력된 티커 "${ticker}"를 다음 방법론에 따라 심층 분석하여 정량적 데이터를 도출하십시오.
-
-    [적용할 분석 방법론]
-    ${methodologyToUse}
-
-    [출력 규칙]
-    - 반드시 **한국어**로 답변하십시오.
-    - 출력은 **순수 JSON**이어야 합니다. 마크다운 코드 블록을 사용하지 마십시오.
-    - googleSearch 도구를 사용하여 최신 시장 데이터와 2026년 추정치를 반영하십시오.
+    ${baseInstruction}
+    ${methodologyText}
+    
+    출력은 반드시 유효한 JSON 형식이어야 하며 마크다운 코드 블록(예: \`\`\`json)을 포함하지 마십시오.
+    구글 검색(googleSearch)을 활용해 최신 2024-2025 실적과 2026 가이던스를 참고하세요.
   `;
 
   try {
-    // 무한 로딩 해결을 위해 응답 속도가 빠른 gemini-3-flash-preview 사용
-    // 복잡한 분석을 위해 필요한 경우 gemini-3-pro-preview로 변경 가능하나, 현재는 안정성 우선
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview", 
-      contents: `미국 주식 ${ticker}에 대해 제공된 방법론을 적용한 상세 정량 보고서를 JSON으로 작성해줘.`,
+      contents: `미국 주식 ${ticker}의 정량 분석 결과(2026 추정치 포함)를 JSON으로 생성해줘.`,
       config: {
         systemInstruction: systemInstruction,
         tools: [{ googleSearch: {} }],
-        // thinkingConfig 제거하여 지연 시간 단축
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -64,8 +56,7 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
                 tamReasoning: { type: Type.STRING },
                 samReasoning: { type: Type.STRING },
                 somReasoning: { type: Type.STRING }
-              },
-              required: ["tam", "sam", "som", "description"]
+              }
             },
             unitEconomics: {
               type: Type.OBJECT,
@@ -77,10 +68,8 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
                 paybackPeriod: { type: Type.NUMBER },
                 isHealthy: { type: Type.BOOLEAN },
                 ltvReasoning: { type: Type.STRING },
-                cacReasoning: { type: Type.STRING },
-                contributionMarginReasoning: { type: Type.STRING }
-              },
-              required: ["ltv", "cac", "ratio", "isHealthy"]
+                cacReasoning: { type: Type.STRING }
+              }
             },
             buyStrategy: {
               type: Type.OBJECT,
@@ -89,8 +78,7 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
                 shortTerm: { type: Type.STRING },
                 mediumTerm: { type: Type.STRING },
                 longTerm: { type: Type.STRING }
-              },
-              required: ["currentPriceContext", "shortTerm", "mediumTerm", "longTerm"]
+              }
             },
             investmentSummary: {
               type: Type.ARRAY,
@@ -125,12 +113,12 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
                 properties: {
                   title: { type: Type.STRING },
                   description: { type: Type.STRING },
-                  impact: { type: Type.STRING, enum: ["Positive", "Neutral", "Negative"] }
+                  impact: { type: Type.STRING }
                 }
               }
             }
           },
-          required: ["ticker", "companyName", "verdict", "potentialRating", "growthStage", "marketSize", "unitEconomics", "investmentSummary", "buyStrategy"]
+          required: ["ticker", "companyName", "verdict", "potentialRating", "growthStage", "marketSize", "unitEconomics", "buyStrategy", "investmentSummary"]
         }
       }
     });
@@ -139,13 +127,14 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
     let data: any;
     
     try {
-      data = JSON.parse(rawText.replace(/```json|```/g, "").trim());
+      const cleaned = rawText.replace(/```json|```/g, "").trim();
+      data = JSON.parse(cleaned);
     } catch (parseError) {
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         data = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error("분석 데이터를 파싱하는 데 실패했습니다.");
+        throw new Error("분석 데이터를 읽을 수 없습니다. (JSON 파싱 실패)");
       }
     }
     
@@ -162,7 +151,7 @@ export const analyzeStock = async (ticker: string, customMethodology?: string): 
       sources: [...(data.sources || []), ...searchSources]
     };
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini API Error Core:", error);
     throw error;
   }
 };
