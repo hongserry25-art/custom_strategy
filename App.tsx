@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Loader2, BarChart3, TrendingUp, Key, AlertTriangle, Target, Activity, ShieldCheck } from 'lucide-react';
 import { analyzeStock } from './services/geminiService';
 import { AnalysisResult } from './types';
@@ -11,6 +11,15 @@ const App: React.FC = () => {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+  const [isPlatformSupport, setIsPlatformSupport] = useState(false);
+
+  useEffect(() => {
+    // Check if the platform specific 'aistudio' context is available
+    const aistudio = (window as any).aistudio;
+    if (aistudio && typeof aistudio.openSelectKey === 'function') {
+      setIsPlatformSupport(true);
+    }
+  }, []);
 
   const handleOpenKeyDialog = async () => {
     const aistudio = (window as any).aistudio;
@@ -22,8 +31,6 @@ const App: React.FC = () => {
       } catch (err) {
         console.error("Failed to open key dialog", err);
       }
-    } else {
-      alert("현재 환경에서는 API 키 설정을 지원하지 않습니다.");
     }
   };
 
@@ -32,9 +39,6 @@ const App: React.FC = () => {
     const cleanTicker = ticker.trim().toUpperCase();
     if (!cleanTicker) return;
 
-    // Check if API key is likely missing before even trying
-    const hasKeyInEnv = !!process.env.API_KEY;
-    
     setIsAnalyzing(true);
     setError(null);
     setIsQuotaExceeded(false);
@@ -44,10 +48,8 @@ const App: React.FC = () => {
       const aistudio = (window as any).aistudio;
       if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
         const hasKey = await aistudio.hasSelectedApiKey();
-        if (!hasKey && !hasKeyInEnv) {
+        if (!hasKey && !process.env.API_KEY) {
           await aistudio.openSelectKey();
-          // After opening, we assume success as per instructions, 
-          // but we also inform the user to click analyze again if the first attempt fails due to timing.
         }
       }
 
@@ -57,17 +59,17 @@ const App: React.FC = () => {
       console.error("Analysis failed Error Details:", err);
       const errorMessage = err?.message || String(err);
       
-      if (errorMessage.includes("API Key must be set") || errorMessage.includes("apiKey") || !process.env.API_KEY) {
-        setError("분석을 위해 API 키 설정이 필요합니다. 상단의 'API 키 설정' 버튼을 눌러 본인의 API 키를 연결해 주세요.");
-        handleOpenKeyDialog();
+      if (errorMessage.includes("API Key must be set") || errorMessage.includes("apiKey") || errorMessage.includes("401")) {
+        setError("분석을 위한 API 키가 설정되지 않았습니다. 관리자에게 문의하거나 본인의 키를 설정해 주세요.");
+        if (isPlatformSupport) handleOpenKeyDialog();
       } else if (errorMessage.includes("quota") || errorMessage.includes("429") || errorMessage.includes("exhausted")) {
         setIsQuotaExceeded(true);
-        setError("API 사용량이 초과되었습니다. 무료 할당량이 모두 소진되었으니 본인의 API 키를 연결해 주세요.");
+        setError("API 사용량이 초과되었습니다. 잠시 후 다시 시도하거나 다른 키를 사용해 주세요.");
       } else if (errorMessage.includes("Requested entity was not found.")) {
-        setError("API 키가 올바르지 않거나 해당 모델에 대한 권한이 없습니다. API 키를 다시 설정해주세요.");
-        handleOpenKeyDialog();
+        setError("API 키 설정에 문제가 있습니다. 다시 확인해 주세요.");
+        if (isPlatformSupport) handleOpenKeyDialog();
       } else if (errorMessage.includes("safety") || errorMessage.includes("blocked")) {
-        setError("안전 필터에 의해 분석이 중단되었습니다. 다른 티커를 시도해 보세요.");
+        setError("안전 필터에 의해 분석이 중단되었습니다. 다른 종목을 분석해 보세요.");
       } else {
         setError(`분석 중 오류가 발생했습니다: ${errorMessage.length > 100 ? errorMessage.substring(0, 100) + '...' : errorMessage}`);
       }
@@ -78,14 +80,16 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 md:py-16 bg-slate-900 min-h-screen text-slate-100">
-      <div className="flex justify-end mb-8">
-        <button 
-          onClick={handleOpenKeyDialog}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all shadow-lg active:scale-95"
-        >
-          <Key size={14} className="text-blue-400" />
-          API 키 설정
-        </button>
+      <div className="flex justify-end mb-8 h-10">
+        {isPlatformSupport && (
+          <button 
+            onClick={handleOpenKeyDialog}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all shadow-lg active:scale-95"
+          >
+            <Key size={14} className="text-blue-400" />
+            API 키 설정
+          </button>
+        )}
       </div>
 
       <header className="text-center mb-16">
@@ -124,12 +128,12 @@ const App: React.FC = () => {
           <div className={`p-6 border rounded-2xl flex flex-col items-center gap-4 text-center transition-all animate-in fade-in zoom-in duration-300 ${isQuotaExceeded || error.includes('API 키') ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/50 text-red-500'}`}>
             <div className="flex items-center gap-2 font-bold text-lg">
               <AlertTriangle size={24} />
-              {isQuotaExceeded ? '할당량 초과' : (error.includes('API 키') ? 'API 키 설정 필요' : '알림')}
+              {isQuotaExceeded ? '할당량 초과' : (error.includes('API 키') ? '설정 확인 필요' : '알림')}
             </div>
             <p className="text-sm opacity-90 font-medium leading-relaxed">{error}</p>
-            {(isQuotaExceeded || error.includes('API 키')) && (
+            {isPlatformSupport && (isQuotaExceeded || error.includes('API 키')) && (
               <button onClick={handleOpenKeyDialog} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-xl transition-all shadow-lg">
-                본인의 유료 API 키 연결하기
+                본인의 API 키 연결하기
               </button>
             )}
             <button 
@@ -147,7 +151,7 @@ const App: React.FC = () => {
           <div className="w-24 h-24 border-8 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-8 shadow-2xl shadow-blue-500/10"></div>
           <h3 className="text-2xl font-black text-white mb-4">정량적 데이터 추출 중...</h3>
           <p className="text-slate-400 text-center max-w-sm leading-relaxed">
-            최신 공시 자료와 시장 데이터를 바탕으로 2026년 추정치를 계산하고 있습니다. 약 10~20초 정도 소요될 수 있습니다.
+            최신 시장 데이터를 바탕으로 2026년 추정치를 계산하고 있습니다. 약 10~20초 정도 소요될 수 있습니다.
           </p>
         </div>
       )}
