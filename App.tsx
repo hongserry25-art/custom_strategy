@@ -29,7 +29,8 @@ const App: React.FC = () => {
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker) return;
+    const cleanTicker = ticker.trim().toUpperCase();
+    if (!cleanTicker) return;
 
     setIsAnalyzing(true);
     setError(null);
@@ -45,19 +46,23 @@ const App: React.FC = () => {
         }
       }
 
-      const data = await analyzeStock(ticker.toUpperCase());
+      const data = await analyzeStock(cleanTicker);
       setResult(data);
     } catch (err: any) {
-      console.error(err);
-      const errorMessage = err?.message || "";
+      console.error("Analysis failed Error Details:", err);
+      const errorMessage = err?.message || String(err);
+      
       if (errorMessage.includes("quota") || errorMessage.includes("429") || errorMessage.includes("exhausted")) {
         setIsQuotaExceeded(true);
-        setError("API 사용량이 초과되었습니다. 원활한 분석을 위해 본인의 API 키를 연결해 주세요.");
+        setError("API 사용량이 초과되었습니다. 무료 할당량이 모두 소진되었으니 본인의 API 키를 연결해 주세요.");
       } else if (errorMessage.includes("Requested entity was not found.")) {
-        setError("API 키 설정에 문제가 있습니다. 다시 설정해주세요.");
+        setError("API 키가 올바르지 않거나 해당 모델에 대한 권한이 없습니다. API 키를 다시 설정해주세요.");
         handleOpenKeyDialog();
+      } else if (errorMessage.includes("safety") || errorMessage.includes("blocked")) {
+        setError("안전 필터에 의해 분석이 중단되었습니다. 다른 티커를 시도해 보세요.");
       } else {
-        setError("분석 중 오류가 발생했습니다. 티커가 정확한지 확인해 주세요.");
+        // Show more descriptive error for debugging
+        setError(`분석 중 오류가 발생했습니다: ${errorMessage.length > 100 ? errorMessage.substring(0, 100) + '...' : errorMessage}`);
       }
     } finally {
       setIsAnalyzing(false);
@@ -94,7 +99,7 @@ const App: React.FC = () => {
             type="text"
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
-            placeholder="미국 주식 티커 입력 (예: NVDA, TSLA)"
+            placeholder="미국 주식 티커 입력 (예: NVDA, PLTR)"
             className="w-full h-20 pl-16 pr-40 bg-slate-800 border-2 border-slate-700 rounded-3xl text-2xl font-bold text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-8 focus:ring-blue-500/10 transition-all group-hover:border-slate-600 shadow-2xl"
           />
           <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={28} />
@@ -120,6 +125,12 @@ const App: React.FC = () => {
                 내 API 키 연결하여 계속하기
               </button>
             )}
+            <button 
+              onClick={() => setError(null)} 
+              className="text-xs opacity-50 hover:opacity-100 underline mt-2"
+            >
+              닫기
+            </button>
           </div>
         )}
       </div>
@@ -129,7 +140,7 @@ const App: React.FC = () => {
           <div className="w-24 h-24 border-8 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-8 shadow-2xl shadow-blue-500/10"></div>
           <h3 className="text-2xl font-black text-white mb-4">정량적 데이터 추출 중...</h3>
           <p className="text-slate-400 text-center max-w-sm leading-relaxed">
-            2026년 가이던스, TAM/SAM/SOM 및 유닛 이코노믹스를 계산하여 텐배거 잠재력을 검증하고 있습니다.
+            최신 공시 자료와 시장 데이터를 바탕으로 2026년 추정치를 계산하고 있습니다. 약 10~20초 정도 소요될 수 있습니다.
           </p>
         </div>
       )}
