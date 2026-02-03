@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Search, Loader2, BarChart3, TrendingUp, Key, AlertTriangle, Target, Activity, FileText, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Search, Loader2, BarChart3, TrendingUp, Key, AlertTriangle, Target, Activity, ShieldCheck } from 'lucide-react';
 import { analyzeStock } from './services/geminiService';
 import { AnalysisResult } from './types';
 import StockDashboard from './components/StockDashboard';
@@ -32,6 +32,9 @@ const App: React.FC = () => {
     const cleanTicker = ticker.trim().toUpperCase();
     if (!cleanTicker) return;
 
+    // Check if API key is likely missing before even trying
+    const hasKeyInEnv = !!process.env.API_KEY;
+    
     setIsAnalyzing(true);
     setError(null);
     setIsQuotaExceeded(false);
@@ -41,8 +44,10 @@ const App: React.FC = () => {
       const aistudio = (window as any).aistudio;
       if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
         const hasKey = await aistudio.hasSelectedApiKey();
-        if (!hasKey) {
+        if (!hasKey && !hasKeyInEnv) {
           await aistudio.openSelectKey();
+          // After opening, we assume success as per instructions, 
+          // but we also inform the user to click analyze again if the first attempt fails due to timing.
         }
       }
 
@@ -52,7 +57,10 @@ const App: React.FC = () => {
       console.error("Analysis failed Error Details:", err);
       const errorMessage = err?.message || String(err);
       
-      if (errorMessage.includes("quota") || errorMessage.includes("429") || errorMessage.includes("exhausted")) {
+      if (errorMessage.includes("API Key must be set") || errorMessage.includes("apiKey") || !process.env.API_KEY) {
+        setError("분석을 위해 API 키 설정이 필요합니다. 상단의 'API 키 설정' 버튼을 눌러 본인의 API 키를 연결해 주세요.");
+        handleOpenKeyDialog();
+      } else if (errorMessage.includes("quota") || errorMessage.includes("429") || errorMessage.includes("exhausted")) {
         setIsQuotaExceeded(true);
         setError("API 사용량이 초과되었습니다. 무료 할당량이 모두 소진되었으니 본인의 API 키를 연결해 주세요.");
       } else if (errorMessage.includes("Requested entity was not found.")) {
@@ -61,7 +69,6 @@ const App: React.FC = () => {
       } else if (errorMessage.includes("safety") || errorMessage.includes("blocked")) {
         setError("안전 필터에 의해 분석이 중단되었습니다. 다른 티커를 시도해 보세요.");
       } else {
-        // Show more descriptive error for debugging
         setError(`분석 중 오류가 발생했습니다: ${errorMessage.length > 100 ? errorMessage.substring(0, 100) + '...' : errorMessage}`);
       }
     } finally {
@@ -114,15 +121,15 @@ const App: React.FC = () => {
         </form>
 
         {error && (
-          <div className={`p-6 border rounded-2xl flex flex-col items-center gap-4 text-center transition-all animate-in fade-in zoom-in duration-300 ${isQuotaExceeded ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/50 text-red-500'}`}>
+          <div className={`p-6 border rounded-2xl flex flex-col items-center gap-4 text-center transition-all animate-in fade-in zoom-in duration-300 ${isQuotaExceeded || error.includes('API 키') ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/50 text-red-500'}`}>
             <div className="flex items-center gap-2 font-bold text-lg">
               <AlertTriangle size={24} />
-              {isQuotaExceeded ? '할당량 초과' : '알림'}
+              {isQuotaExceeded ? '할당량 초과' : (error.includes('API 키') ? 'API 키 설정 필요' : '알림')}
             </div>
             <p className="text-sm opacity-90 font-medium leading-relaxed">{error}</p>
-            {isQuotaExceeded && (
+            {(isQuotaExceeded || error.includes('API 키')) && (
               <button onClick={handleOpenKeyDialog} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-xl transition-all shadow-lg">
-                내 API 키 연결하여 계속하기
+                본인의 유료 API 키 연결하기
               </button>
             )}
             <button 
