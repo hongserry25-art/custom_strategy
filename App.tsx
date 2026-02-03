@@ -86,7 +86,7 @@ const App: React.FC = () => {
           <TrendingUp className="text-white" size={40} />
         </div>
         <h1 className="text-4xl md:text-6xl font-black text-white tracking-tight mb-6">
-          퀀트 <span className="text-blue-500">텐배거 분석기</span>
+          <span className="text-blue-500">텐배거 분석기</span>
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-xl leading-relaxed">
           올랜도 킴의 정량적 방법론을 바탕으로<br/>미국 주식의 잠재력을 심층 분석합니다.
@@ -174,7 +174,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="mt-32 py-12 border-t border-slate-800 text-center text-slate-500 text-xs">
-        <p className="font-medium tracking-wide">CUSTOM QUANTITATIVE STOCK ANALYZER SYSTEM</p>
+        <p className="font-medium tracking-wide">ORLANDO KIM STOCK ANALYZER SYSTEM</p>
         <p className="mt-4 text-slate-600 max-w-lg mx-auto leading-relaxed">이 도구는 올랜도 킴의 정량 분석법을 AI로 구현한 결과이며, 투자에 따른 책임은 투자자 본인에게 있습니다.</p>
       </footer>
     </div>
