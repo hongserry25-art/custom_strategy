@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Search, Loader2, BarChart3, TrendingUp, Key, AlertTriangle, Target, Activity, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Loader2, BarChart3, TrendingUp, Key, AlertTriangle, Target, Activity, ShieldCheck, Upload, FileText, CheckCircle2, X } from 'lucide-react';
 import { analyzeStock } from './services/geminiService';
 import { AnalysisResult } from './types';
 import StockDashboard from './components/StockDashboard';
@@ -8,18 +8,39 @@ import StockDashboard from './components/StockDashboard';
 const App: React.FC = () => {
   const [ticker, setTicker] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [isPlatformSupport, setIsPlatformSupport] = useState(false);
+  const [customMethodology, setCustomMethodology] = useState<string>('');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Check if the platform specific 'aistudio' context is available
     const aistudio = (window as any).aistudio;
     if (aistudio && typeof aistudio.openSelectKey === 'function') {
       setIsPlatformSupport(true);
     }
   }, []);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadedFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setCustomMethodology(content);
+    };
+    reader.readAsText(file);
+  };
+
+  const removeFile = () => {
+    setUploadedFileName(null);
+    setCustomMethodology('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleOpenKeyDialog = async () => {
     const aistudio = (window as any).aistudio;
@@ -27,7 +48,6 @@ const App: React.FC = () => {
       try {
         await aistudio.openSelectKey();
         setError(null);
-        setIsQuotaExceeded(false);
       } catch (err) {
         console.error("Failed to open key dialog", err);
       }
@@ -40,41 +60,43 @@ const App: React.FC = () => {
     if (!cleanTicker) return;
 
     setIsAnalyzing(true);
+    setAnalysisStep('최신 시장 데이터 검색 중...');
     setError(null);
-    setIsQuotaExceeded(false);
     setResult(null);
 
-    try {
-      const aistudio = (window as any).aistudio;
-      if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
-        const hasKey = await aistudio.hasSelectedApiKey();
-        if (!hasKey && !process.env.API_KEY) {
-          await aistudio.openSelectKey();
-        }
-      }
+    // 분석 단계 시뮬레이션 및 실제 호출
+    const stepInterval = setInterval(() => {
+      const steps = [
+        '최신 뉴스 및 공시 자료 수집 중...',
+        '2026년 정량적 추정치 계산 중...',
+        '유닛 이코노믹스 건전성 검토 중...',
+        '최종 분석 보고서 생성 중...'
+      ];
+      setAnalysisStep(prev => {
+        const idx = steps.indexOf(prev);
+        return steps[(idx + 1) % steps.length];
+      });
+    }, 4000);
 
-      const data = await analyzeStock(cleanTicker);
+    try {
+      const data = await analyzeStock(cleanTicker, customMethodology);
       setResult(data);
     } catch (err: any) {
-      console.error("Analysis failed Error Details:", err);
+      console.error("Analysis failed:", err);
       const errorMessage = err?.message || String(err);
       
-      if (errorMessage.includes("API Key must be set") || errorMessage.includes("apiKey") || errorMessage.includes("401")) {
-        setError("분석을 위한 API 키가 설정되지 않았습니다. 관리자에게 문의하거나 본인의 키를 설정해 주세요.");
+      if (errorMessage.includes("API Key") || errorMessage.includes("apiKey")) {
+        setError("API 키가 설정되지 않았습니다. 상단의 'API 키 설정' 버튼을 눌러주세요.");
         if (isPlatformSupport) handleOpenKeyDialog();
-      } else if (errorMessage.includes("quota") || errorMessage.includes("429") || errorMessage.includes("exhausted")) {
-        setIsQuotaExceeded(true);
-        setError("API 사용량이 초과되었습니다. 잠시 후 다시 시도하거나 다른 키를 사용해 주세요.");
-      } else if (errorMessage.includes("Requested entity was not found.")) {
-        setError("API 키 설정에 문제가 있습니다. 다시 확인해 주세요.");
-        if (isPlatformSupport) handleOpenKeyDialog();
-      } else if (errorMessage.includes("safety") || errorMessage.includes("blocked")) {
-        setError("안전 필터에 의해 분석이 중단되었습니다. 다른 종목을 분석해 보세요.");
+      } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+        setError("API 사용량이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
       } else {
-        setError(`분석 중 오류가 발생했습니다: ${errorMessage.length > 100 ? errorMessage.substring(0, 100) + '...' : errorMessage}`);
+        setError(`분석 중 오류가 발생했습니다: ${errorMessage}`);
       }
     } finally {
+      clearInterval(stepInterval);
       setIsAnalyzing(false);
+      setAnalysisStep('');
     }
   };
 
@@ -92,7 +114,7 @@ const App: React.FC = () => {
         )}
       </div>
 
-      <header className="text-center mb-16">
+      <header className="text-center mb-12">
         <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-3xl shadow-2xl shadow-blue-500/20 mb-8 group hover:rotate-6 transition-transform">
           <TrendingUp className="text-white" size={40} />
         </div>
@@ -100,11 +122,49 @@ const App: React.FC = () => {
           <span className="text-blue-500">텐배거 분석기</span>
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-xl leading-relaxed">
-          올랜도 킴의 정량적 방법론을 바탕으로<br/>미국 주식의 잠재력을 심층 분석합니다.
+          올랜도 킴 모델 또는 사용자의 커스텀 방법론을 바탕으로<br/>미국 주식의 잠재력을 심층 분석합니다.
         </p>
       </header>
 
-      <div className="max-w-xl mx-auto mb-20 space-y-8">
+      <div className="max-w-2xl mx-auto mb-20 space-y-6">
+        {/* File Upload Section */}
+        <div className="bg-slate-800/50 border-2 border-dashed border-slate-700 rounded-3xl p-6 transition-all hover:border-blue-500/50">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-slate-900 rounded-2xl text-blue-400">
+                <Upload size={24} />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-bold text-white">커스텀 분석 방법론 파일 (선택)</p>
+                <p className="text-xs text-slate-500">업로드 시 파일의 내용을 최우선으로 적용합니다.</p>
+              </div>
+            </div>
+            {!uploadedFileName ? (
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-xs font-black rounded-xl transition-all"
+              >
+                파일 선택
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                <FileText size={14} className="text-blue-400" />
+                <span className="text-xs font-bold text-blue-400 truncate max-w-[120px]">{uploadedFileName}</span>
+                <button onClick={removeFile} className="text-slate-500 hover:text-white p-1">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              className="hidden" 
+              accept=".txt,.pdf"
+            />
+          </div>
+        </div>
+
         <form onSubmit={handleAnalyze} className="relative group">
           <input
             type="text"
@@ -125,20 +185,12 @@ const App: React.FC = () => {
         </form>
 
         {error && (
-          <div className={`p-6 border rounded-2xl flex flex-col items-center gap-4 text-center transition-all animate-in fade-in zoom-in duration-300 ${isQuotaExceeded || error.includes('API 키') ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/50 text-red-500'}`}>
-            <div className="flex items-center gap-2 font-bold text-lg">
-              <AlertTriangle size={24} />
-              {isQuotaExceeded ? '할당량 초과' : (error.includes('API 키') ? '설정 확인 필요' : '알림')}
-            </div>
-            <p className="text-sm opacity-90 font-medium leading-relaxed">{error}</p>
-            {isPlatformSupport && (isQuotaExceeded || error.includes('API 키')) && (
-              <button onClick={handleOpenKeyDialog} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-xl transition-all shadow-lg">
-                본인의 API 키 연결하기
-              </button>
-            )}
+          <div className="p-6 border border-red-500/50 bg-red-500/10 rounded-2xl flex flex-col items-center gap-4 text-center animate-in fade-in zoom-in duration-300">
+            <AlertTriangle className="text-red-500" size={32} />
+            <p className="text-sm font-medium text-red-400">{error}</p>
             <button 
               onClick={() => setError(null)} 
-              className="text-xs opacity-50 hover:opacity-100 underline mt-2"
+              className="text-xs text-red-500 underline"
             >
               닫기
             </button>
@@ -148,10 +200,19 @@ const App: React.FC = () => {
 
       {isAnalyzing && (
         <div className="flex flex-col items-center justify-center py-20 animate-in fade-in duration-500">
-          <div className="w-24 h-24 border-8 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-8 shadow-2xl shadow-blue-500/10"></div>
+          <div className="relative mb-8">
+            <div className="w-24 h-24 border-8 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <TrendingUp className="text-blue-500 animate-pulse" size={32} />
+            </div>
+          </div>
           <h3 className="text-2xl font-black text-white mb-4">정량적 데이터 추출 중...</h3>
-          <p className="text-slate-400 text-center max-w-sm leading-relaxed">
-            최신 시장 데이터를 바탕으로 2026년 추정치를 계산하고 있습니다. 약 10~20초 정도 소요될 수 있습니다.
+          <p className="text-blue-400 font-bold flex items-center gap-2">
+            <Loader2 className="animate-spin" size={16} />
+            {analysisStep}
+          </p>
+          <p className="text-slate-500 text-sm text-center mt-6 max-w-sm leading-relaxed">
+            최신 시장 데이터를 검색하고 방법론을 적용하고 있습니다.<br/>잠시만 기다려 주세요. (보통 15~30초 소요)
           </p>
         </div>
       )}
@@ -165,28 +226,28 @@ const App: React.FC = () => {
                <Target className="text-blue-400" size={28} />
             </div>
             <h4 className="font-bold text-white mb-3 text-lg text-blue-500">TAM/SAM/SOM</h4>
-            <p className="text-sm text-slate-500 leading-relaxed font-medium">전체 시장 규모와 수익 가능 시장을 정량적으로 계산합니다.</p>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">시장 규모를 정량적으로 계산하여 수익 가능 범위를 산출합니다.</p>
           </div>
           <div className="p-8 bg-slate-800/40 border border-slate-700/50 rounded-3xl text-center group hover:bg-slate-800 transition-all hover:border-emerald-500/30">
             <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                <Activity className="text-emerald-400" size={28} />
             </div>
             <h4 className="font-bold text-white mb-3 text-lg text-emerald-500">Unit Economics</h4>
-            <p className="text-sm text-slate-500 leading-relaxed font-medium">LTV/CAC 비율과 공헌 이익률을 통해 비즈니스 체력을 검증합니다.</p>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">LTV/CAC 비율을 통해 비즈니스 모델의 근본적 이익 체력을 검증합니다.</p>
           </div>
           <div className="p-8 bg-slate-800/40 border border-slate-700/50 rounded-3xl text-center group hover:bg-slate-800 transition-all hover:border-amber-500/30">
             <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
-               <ShieldCheck className="text-amber-400" size={28} />
+               <CheckCircle2 className="text-amber-400" size={28} />
             </div>
-            <h4 className="font-bold text-white mb-3 text-lg text-amber-500">Orlando Kim 모델</h4>
-            <p className="text-sm text-slate-500 leading-relaxed font-medium">검증된 텐배거 발굴 프레임워크가 시스템에 기본 적용되어 있습니다.</p>
+            <h4 className="font-bold text-white mb-3 text-lg text-amber-500">Custom Methodology</h4>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">파일을 업로드하여 본인만의 분석 기준을 AI에 즉시 학습시킬 수 있습니다.</p>
           </div>
         </div>
       )}
 
       <footer className="mt-32 py-12 border-t border-slate-800 text-center text-slate-500 text-xs">
         <p className="font-medium tracking-wide">ORLANDO KIM STOCK ANALYZER SYSTEM</p>
-        <p className="mt-4 text-slate-600 max-w-lg mx-auto leading-relaxed">이 도구는 올랜도 킴의 정량 분석법을 AI로 구현한 결과이며, 투자에 따른 책임은 투자자 본인에게 있습니다.</p>
+        <p className="mt-4 text-slate-600 max-w-lg mx-auto leading-relaxed">이 도구는 AI 기반 정량 분석 결과이며, 투자에 따른 책임은 투자자 본인에게 있습니다.</p>
       </footer>
     </div>
   );
